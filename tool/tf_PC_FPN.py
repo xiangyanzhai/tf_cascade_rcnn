@@ -106,6 +106,7 @@ class ProposalCreator(object):
         roi = tf.clip_by_value(roi, [0, 0, 0, 0], [h, w, h, w])
 
         Roi = []
+        nms_Roi = []
         Score = []
         C = 0
 
@@ -116,23 +117,29 @@ class ProposalCreator(object):
             tscore = score[C:C + c]
             troi = roi[C:C + c]
             C += c
+
+            tscore, top_k = tf.nn.top_k(tscore, k=tf.reduce_min([n_post_nms, tf.shape(tscore)[0]]))
+            troi = tf.gather(troi, top_k)
+
             hw = troi[:, 2:4] - troi[:, :2]
             inds = tf.reduce_all(hw >= self.min_size[i], axis=1)
             inds = tf.reshape(inds, (-1,))
             troi = tf.boolean_mask(troi, inds)
             tscore = tf.boolean_mask(tscore, inds)
-            tscore, top_k = tf.nn.top_k(tscore, k=tf.reduce_min([n_post_nms, tf.shape(tscore)[0]]))
-            troi = tf.gather(troi, top_k)
+
             Roi.append(troi)
             Score.append(tscore)
+            nms_Roi.append(troi + i * 2 * tf.reduce_max([h, w]))
 
         roi = tf.concat(Roi, axis=0)
         score = tf.concat(Score, axis=0)
+        nms_roi = tf.concat(nms_Roi, axis=0)
 
         score, top_k = tf.nn.top_k(score, k=tf.shape(score)[0])
         roi = tf.gather(roi, top_k)
+        nms_roi = tf.gather(nms_roi, top_k)
         # inds=tf.image.non_max_suppression(roi,score,n_post_nms,iou_threshold=self.nms_thresh)
-        inds = tf.py_func(py_nms, [roi, self.nms_thresh], tf.int32)[:n_post_nms]
+        inds = tf.py_func(py_nms, [nms_roi, self.nms_thresh], tf.int32)[:n_post_nms]
         inds = tf.reshape(inds, (-1,))
         roi = tf.gather(roi, inds)
 
